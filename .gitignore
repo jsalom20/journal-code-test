@@ -1,0 +1,74 @@
+# .gitignore for .NET 10 (ASP.NET Core, C#) and Next.js (React)
+
+# --- .NET ---
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vs/
+
+# Visual Studio Code
+.vscode/
+
+# NuGet
+*.nupkg
+# The packages folder can be ignored if using PackageReference
+packages/
+# NuGet v3's project.json files produces this folder
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# Rider
+.idea/
+
+# --- Next.js ---
+node_modules/
+.next/
+out/
+build/
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
+.env*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Coverage
+coverage/
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# OS generated
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Others
+*.swp
+*.swo
+*.tmp
+*.bak
+*.log
