@@ -1,4 +1,4 @@
-# Frenda Library Code Test
+# Frenda Library Code Test - Developed by Codex - GPT 5.4
 
 Fullstack library circulation app built with:
 
