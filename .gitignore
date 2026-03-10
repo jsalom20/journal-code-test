@@ -3,7 +3,9 @@
 # --- .NET ---
 ## Build results
 [Bb]in/
+[Bb]in\\Debug/
 [Oo]bj/
+[Oo]bj\\Debug/
 [Ll]og/
 TestResults/
 *.user

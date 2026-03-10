@@ -1,7 +1,9 @@
+using Library.Api.Middleware;
 using Library.Infrastructure;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+var seedOnly = args.Contains("--seed-only", StringComparer.OrdinalIgnoreCase);
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -11,7 +13,7 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen();
-builder.Services.AddLibraryInfrastructure(builder.Configuration);
+builder.Services.AddLibraryInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("client", policy =>
@@ -32,8 +34,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseMiddleware<DatabaseExceptionHandlingMiddleware>();
 app.UseCors("client");
 app.MapControllers();
+
+if (seedOnly)
+{
+    return;
+}
 
 app.Run();
 

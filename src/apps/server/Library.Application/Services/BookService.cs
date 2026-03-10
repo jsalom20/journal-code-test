@@ -237,12 +237,18 @@ public sealed class BookService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<CopyListItem?> CreateCopyAsync(CopyUpsertRequest request, CancellationToken cancellationToken)
+    public async Task<ServiceResult<CopyListItem>> CreateCopyAsync(CopyUpsertRequest request, CancellationToken cancellationToken)
     {
         var book = await _dbContext.Books.FirstOrDefaultAsync(entity => entity.Id == request.BookId, cancellationToken);
         if (book is null)
         {
-            return null;
+            return ServiceResult<CopyListItem>.Failure("Book not found.");
+        }
+
+        if (IsCirculationManagedStatus(request.CirculationStatus))
+        {
+            return ServiceResult<CopyListItem>.Failure(
+                "Copies cannot be created directly in OnLoan or Reserved status. Use circulation workflows instead.");
         }
 
         var copy = new BookCopy
@@ -267,21 +273,28 @@ public sealed class BookService
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return await GetCopyAsync(copy.Id, cancellationToken);
+        return ServiceResult<CopyListItem>.Success((await GetCopyAsync(copy.Id, cancellationToken))!);
     }
 
-    public async Task<CopyListItem?> UpdateCopyAsync(Guid copyId, CopyUpsertRequest request, CancellationToken cancellationToken)
+    public async Task<ServiceResult<CopyListItem>> UpdateCopyAsync(Guid copyId, CopyUpsertRequest request, CancellationToken cancellationToken)
     {
         var copy = await _dbContext.BookCopies
             .FirstOrDefaultAsync(entity => entity.Id == copyId, cancellationToken);
 
         if (copy is null)
         {
-            return null;
+            return ServiceResult<CopyListItem>.Failure("Copy not found.");
         }
 
         var previousStatus = copy.CirculationStatus;
         var previousCondition = copy.ConditionStatus;
+
+        if (IsCirculationManagedStatus(previousStatus) != IsCirculationManagedStatus(request.CirculationStatus) ||
+            (previousStatus != request.CirculationStatus && IsCirculationManagedStatus(request.CirculationStatus)))
+        {
+            return ServiceResult<CopyListItem>.Failure(
+                "OnLoan and Reserved states must be managed through checkout, return, and reservation workflows.");
+        }
 
         copy.Barcode = request.Barcode.Trim();
         copy.InventoryNumber = request.InventoryNumber.Trim();
@@ -314,7 +327,7 @@ public sealed class BookService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-        return await GetCopyAsync(copy.Id, cancellationToken);
+        return ServiceResult<CopyListItem>.Success((await GetCopyAsync(copy.Id, cancellationToken))!);
     }
 
     private async Task<CopyListItem?> GetCopyAsync(Guid copyId, CancellationToken cancellationToken)
@@ -364,5 +377,10 @@ public sealed class BookService
                 Author = author
             });
         }
+    }
+
+    private static bool IsCirculationManagedStatus(CirculationStatus status)
+    {
+        return status is CirculationStatus.OnLoan or CirculationStatus.Reserved;
     }
 }

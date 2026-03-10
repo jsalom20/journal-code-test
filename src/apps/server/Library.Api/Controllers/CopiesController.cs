@@ -29,16 +29,23 @@ public sealed class CopiesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<CopyListItem>> CreateCopy([FromBody] CopyUpsertRequest request, CancellationToken cancellationToken)
     {
-        var copy = await _bookService.CreateCopyAsync(request, cancellationToken);
-        return copy is null
-            ? NotFound(new { message = "Book not found." })
-            : CreatedAtAction(nameof(GetCopies), new { bookId = copy.BookId }, copy);
+        var result = await _bookService.CreateCopyAsync(request, cancellationToken);
+        return result.Succeeded
+            ? CreatedAtAction(nameof(GetCopies), new { bookId = result.Value!.BookId }, result.Value)
+            : BadRequest(new { message = result.Error });
     }
 
     [HttpPatch("{copyId:guid}")]
     public async Task<ActionResult<CopyListItem>> UpdateCopy(Guid copyId, [FromBody] CopyUpsertRequest request, CancellationToken cancellationToken)
     {
-        var copy = await _bookService.UpdateCopyAsync(copyId, request, cancellationToken);
-        return copy is null ? NotFound() : Ok(copy);
+        var result = await _bookService.UpdateCopyAsync(copyId, request, cancellationToken);
+        if (!result.Succeeded)
+        {
+            return string.Equals(result.Error, "Copy not found.", StringComparison.Ordinal)
+                ? NotFound()
+                : BadRequest(new { message = result.Error });
+        }
+
+        return Ok(result.Value);
     }
 }

@@ -1,50 +1,22 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useState, useTransition } from "react"
+import { useActionState } from "react"
 
+import { initialMutationState, returnLoan } from "@/app/(library)/actions"
 import { Button } from "@/components/ui/button"
-import { getApiBaseUrl } from "@/lib/api"
 import type { CopyConditionStatus } from "@/lib/types"
 
 const returnOptions: CopyConditionStatus[] = ["Excellent", "Good", "Fair", "Damaged", "Lost"]
 
 export function ReturnLoanButton({ loanId }: { loanId: string }) {
-  const router = useRouter()
-  const [returnCondition, setReturnCondition] = useState<CopyConditionStatus>("Good")
-  const [message, setMessage] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
-
-  function handleClick() {
-    startTransition(async () => {
-      try {
-        const response = await fetch(`${getApiBaseUrl()}/api/loans/${loanId}/return`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            returnCondition,
-            returnNotes: "Returned from circulation desk UI.",
-          }),
-        })
-
-        if (!response.ok) {
-          const error = (await response.json()) as { message?: string }
-          throw new Error(error.message ?? "Return failed.")
-        }
-
-        setMessage("Returned.")
-        router.refresh()
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Return failed.")
-      }
-    })
-  }
+  const [state, formAction, isPending] = useActionState(returnLoan, initialMutationState)
 
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <form action={formAction} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <input type="hidden" name="loanId" value={loanId} />
       <select
-        value={returnCondition}
-        onChange={(event) => setReturnCondition(event.target.value as CopyConditionStatus)}
+        name="returnCondition"
+        defaultValue="Good"
         className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-sm"
       >
         {returnOptions.map((option) => (
@@ -53,10 +25,17 @@ export function ReturnLoanButton({ loanId }: { loanId: string }) {
           </option>
         ))}
       </select>
-      <Button type="button" size="sm" onClick={handleClick} disabled={isPending}>
+      <Button type="submit" size="sm" disabled={isPending}>
         {isPending ? "Returning..." : "Return"}
       </Button>
-      {message ? <span className="text-xs text-stone-600">{message}</span> : null}
-    </div>
+      {state.message ? (
+        <span
+          aria-live="polite"
+          className={state.status === "error" ? "text-xs text-rose-700" : "text-xs text-stone-600"}
+        >
+          {state.message}
+        </span>
+      ) : null}
+    </form>
   )
 }

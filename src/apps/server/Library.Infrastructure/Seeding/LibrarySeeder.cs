@@ -19,90 +19,57 @@ public static class LibrarySeeder
         "Svensson", "Gustafsson", "Pettersson", "Jonsson", "Jansson", "Hansson", "Berg", "Lind"
     ];
 
-    private static readonly string[] TitlePrefixes =
-    [
-        "The Silent", "Northbound", "Borrowed", "Last", "Invisible", "Winter", "Golden", "Hidden",
-        "Glass", "Midnight", "Paper", "River", "Storm", "Archive", "Library", "Shifting"
-    ];
-
-    private static readonly string[] TitleSubjects =
-    [
-        "Garden", "Letters", "Harbor", "City", "Forest", "Tide", "Memory", "Signal",
-        "Bridge", "House", "Map", "Orchard", "Shadow", "Notebook", "Fire", "Compass"
-    ];
-
-    private static readonly string[] Publishers =
-    [
-        "Nordic Press", "Aurora House", "Blue Shelf", "Cedar & Ink", "Granit Books", "Maple Lane"
-    ];
-
-    private static readonly string[] Languages =
-    [
-        "Swedish", "English", "Norwegian", "Danish"
-    ];
-
     public static async Task SeedAsync(LibraryDbContext dbContext, CancellationToken cancellationToken)
     {
-        if (await dbContext.Books.AnyAsync(cancellationToken))
+        if (!await dbContext.Books.AnyAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Catalog seed data is missing. Apply migrations or run scripts/reset-library-db.sh before starting the app.");
+        }
+
+        if (await dbContext.BookCopies.AnyAsync(cancellationToken))
         {
             return;
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
         var random = new Random(42);
-        var authors = Enumerable.Range(1, 350)
-            .Select(index => new Author { Name = $"Author {index:000}" })
-            .ToList();
+        var borrowers = await dbContext.Borrowers
+            .OrderBy(borrower => borrower.CardNumber)
+            .ToListAsync(cancellationToken);
 
-        dbContext.Authors.AddRange(authors);
-
-        var borrowers = Enumerable.Range(1, 100)
-            .Select(index =>
-            {
-                var firstName = FirstNames[index % FirstNames.Length];
-                var lastName = LastNames[index % LastNames.Length];
-                return new Borrower
-                {
-                    CardNumber = $"LIB-{index:0000}",
-                    FirstName = firstName,
-                    LastName = lastName,
-                    Email = $"{firstName.ToLowerInvariant()}.{lastName.ToLowerInvariant()}{index}@library.local",
-                    Status = index % 17 == 0 ? BorrowerStatus.Suspended : BorrowerStatus.Active,
-                    CreatedAtUtc = DateTime.UtcNow.AddDays(-random.Next(30, 500))
-                };
-            })
-            .ToList();
-
-        dbContext.Borrowers.AddRange(borrowers);
-
-        var books = new List<Book>();
-        var copies = new List<BookCopy>();
-
-        for (var index = 1; index <= 1000; index++)
+        if (borrowers.Count == 0)
         {
-            var book = new Book
-            {
-                Title = $"{TitlePrefixes[index % TitlePrefixes.Length]} {TitleSubjects[(index * 3) % TitleSubjects.Length]}",
-                Isbn13 = $"978{index:0000000000}".Substring(0, 13),
-                Language = Languages[index % Languages.Length],
-                Publisher = Publishers[index % Publishers.Length],
-                Summary = $"Catalog summary for seeded book {index}.",
-                PublicationYear = 1990 + (index % 35),
-                CreatedAtUtc = DateTime.UtcNow.AddDays(-random.Next(100, 1200)),
-                UpdatedAtUtc = DateTime.UtcNow.AddDays(-random.Next(1, 90))
-            };
-
-            var authorCount = index % 5 == 0 ? 2 : 1;
-            var selectedAuthors = authors.Skip(index % authors.Count).Take(authorCount).ToList();
-            foreach (var author in selectedAuthors)
-            {
-                book.BookAuthors.Add(new BookAuthor
+            borrowers = Enumerable.Range(1, 100)
+                .Select(index =>
                 {
-                    Book = book,
-                    Author = author
-                });
-            }
+                    var firstName = FirstNames[index % FirstNames.Length];
+                    var lastName = LastNames[index % LastNames.Length];
+                    return new Borrower
+                    {
+                        CardNumber = $"LIB-{index:0000}",
+                        FirstName = firstName,
+                        LastName = lastName,
+                        Email = $"{firstName.ToLowerInvariant()}.{lastName.ToLowerInvariant()}{index}@library.local",
+                        Status = index % 17 == 0 ? BorrowerStatus.Suspended : BorrowerStatus.Active,
+                        CreatedAtUtc = DateTime.UtcNow.AddDays(-random.Next(30, 500))
+                    };
+                })
+                .ToList();
 
-            var copiesForBook = index <= 500 ? 3 : 2;
+            dbContext.Borrowers.AddRange(borrowers);
+        }
+
+        var books = await dbContext.Books
+            .OrderBy(book => book.Title)
+            .ToListAsync(cancellationToken);
+
+        var copies = new List<BookCopy>();
+        for (var index = 0; index < books.Count; index++)
+        {
+            var book = books[index];
+            var copiesForBook = index < 500 ? 3 : 2;
             for (var copyIndex = 1; copyIndex <= copiesForBook; copyIndex++)
             {
                 var sequence = copies.Count + 1;
@@ -119,15 +86,11 @@ public static class LibrarySeeder
                     Notes = random.Next(0, 12) == 0 ? "Inspect spine on next inventory pass." : null
                 };
 
-                book.Copies.Add(copy);
                 copies.Add(copy);
             }
-
-            books.Add(book);
         }
 
-        dbContext.Books.AddRange(books);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.BookCopies.AddRange(copies);
 
         var availableCopies = copies.ToList();
         var activeBorrowers = borrowers.Where(borrower => borrower.Status == BorrowerStatus.Active).ToList();
@@ -135,7 +98,8 @@ public static class LibrarySeeder
         var activeLoans = new List<Loan>();
         var historicalLoans = new List<Loan>();
 
-        for (var index = 0; index < 120; index++)
+        var activeLoanCount = Math.Min(120, availableCopies.Count);
+        for (var index = 0; index < activeLoanCount; index++)
         {
             var copy = availableCopies[index];
             copy.CirculationStatus = CirculationStatus.OnLoan;
@@ -161,7 +125,9 @@ public static class LibrarySeeder
             });
         }
 
-        for (var index = 120; index < 155; index++)
+        var overdueLoanStart = activeLoanCount;
+        var overdueLoanEnd = Math.Min(overdueLoanStart + 35, availableCopies.Count);
+        for (var index = overdueLoanStart; index < overdueLoanEnd; index++)
         {
             var copy = availableCopies[index];
             copy.CirculationStatus = CirculationStatus.OnLoan;
@@ -187,7 +153,9 @@ public static class LibrarySeeder
             });
         }
 
-        for (var index = 155; index < 195; index++)
+        var historicalLoanStart = overdueLoanEnd;
+        var historicalLoanEnd = Math.Min(historicalLoanStart + 40, availableCopies.Count);
+        for (var index = historicalLoanStart; index < historicalLoanEnd; index++)
         {
             var copy = availableCopies[index];
             var borrower = activeBorrowers[index % activeBorrowers.Count];
@@ -230,9 +198,11 @@ public static class LibrarySeeder
         dbContext.Loans.AddRange(historicalLoans);
 
         var readyReservations = new List<Reservation>();
-        for (var index = 0; index < 15; index++)
+        var readyReservationStart = historicalLoanEnd;
+        var readyReservationCount = Math.Min(15, Math.Max(availableCopies.Count - readyReservationStart, 0));
+        for (var index = 0; index < readyReservationCount; index++)
         {
-            var copy = availableCopies[200 + index];
+            var copy = availableCopies[readyReservationStart + index];
             copy.CirculationStatus = CirculationStatus.Reserved;
             copy.ConcurrencyToken = Guid.NewGuid();
             var reservation = new Reservation
@@ -257,12 +227,13 @@ public static class LibrarySeeder
         }
 
         var queuedReservations = new List<Reservation>();
-        for (var index = 0; index < 20; index++)
+        var queuedReservationCount = Math.Min(20, books.Count);
+        for (var index = 0; index < queuedReservationCount; index++)
         {
-            var sourceCopy = availableCopies[40 + index];
+            var sourceBook = books[(index + 40) % books.Count];
             var reservation = new Reservation
             {
-                BookId = sourceCopy.BookId,
+                BookId = sourceBook.Id,
                 Borrower = activeBorrowers[(index + 40) % activeBorrowers.Count],
                 Status = ReservationStatus.Active,
                 QueuedAtUtc = DateTime.UtcNow.AddDays(-random.Next(1, 10))
@@ -275,5 +246,6 @@ public static class LibrarySeeder
         dbContext.Reservations.AddRange(queuedReservations);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 }

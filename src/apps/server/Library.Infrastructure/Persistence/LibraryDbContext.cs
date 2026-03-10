@@ -84,6 +84,9 @@ public sealed class LibraryDbContext : DbContext, ILibraryDbContext
         {
             entity.Property(reservation => reservation.ConcurrencyToken).IsConcurrencyToken();
             entity.HasIndex(reservation => new { reservation.BookId, reservation.Status, reservation.QueuedAtUtc });
+            entity.HasIndex(reservation => reservation.AssignedCopyId)
+                .IsUnique()
+                .HasFilter($"\"AssignedCopyId\" IS NOT NULL AND \"Status\" = {(int)ReservationStatus.ReadyForPickup}");
             entity.HasIndex(reservation => new { reservation.BookId, reservation.BorrowerId })
                 .IsUnique()
                 .HasFilter($"\"Status\" IN ({(int)ReservationStatus.Active}, {(int)ReservationStatus.ReadyForPickup})");

@@ -296,6 +296,8 @@ public sealed class CirculationService
         CreateReservationRequest request,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+
         var borrower = await _dbContext.Borrowers.FirstOrDefaultAsync(entity => entity.Id == request.BorrowerId, cancellationToken);
         if (borrower is null)
         {
@@ -380,6 +382,7 @@ public sealed class CirculationService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return ServiceResult<ReservationListItem>.Success(new ReservationListItem(
             reservation.Id,

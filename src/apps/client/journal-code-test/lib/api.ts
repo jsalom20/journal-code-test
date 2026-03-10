@@ -14,6 +14,18 @@ import type {
 
 type ApiErrorPayload = {
   message?: string
+  title?: string
+  detail?: string
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+    this.name = "ApiError"
+  }
 }
 
 type ApiInit = RequestInit & {
@@ -28,7 +40,7 @@ export function getApiBaseUrl() {
   )
 }
 
-export async function apiFetch<T>(path: string, init?: ApiInit): Promise<T> {
+export async function apiRequest<T>(path: string, init?: ApiInit): Promise<T> {
   const url = new URL(path, getApiBaseUrl())
 
   for (const [key, value] of Object.entries(init?.query ?? {})) {
@@ -37,28 +49,36 @@ export async function apiFetch<T>(path: string, init?: ApiInit): Promise<T> {
     }
   }
 
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  })
+  let response: Response
+
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    })
+  } catch {
+    throw new Error(
+      `Library API request failed for ${url.origin}. Ensure the backend is running and the API base URL is correct.`
+    )
+  }
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`
 
     try {
       const payload = (await response.json()) as ApiErrorPayload
-      if (payload.message) {
-        message = payload.message
+      if (payload.message || payload.detail || payload.title) {
+        message = payload.message ?? payload.detail ?? payload.title ?? message
       }
     } catch {
       // Fall back to default message.
     }
 
-    throw new Error(message)
+    throw new ApiError(message, response.status)
   }
 
   if (response.status === 204) {
@@ -66,6 +86,10 @@ export async function apiFetch<T>(path: string, init?: ApiInit): Promise<T> {
   }
 
   return (await response.json()) as T
+}
+
+export function apiFetch<T>(path: string, init?: ApiInit): Promise<T> {
+  return apiRequest<T>(path, { cache: "no-store", ...init })
 }
 
 export function getDashboardSummary() {
